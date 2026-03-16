@@ -72,7 +72,6 @@ def plot_prediction_vs_target(pred: np.ndarray, target: np.ndarray, fig_path: st
     fig.savefig(fig_path, dpi=150)
     plt.close(fig)
 
-
 def plot_sample_predictions(pred_arr: np.ndarray, true_arr: np.ndarray, fig_dir: str | Path, n_samples: int = 3) -> None:
     """Save side-by-side target/pred/error images for a few samples.
 
