@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.env
+.DS_Store
+*.egg-info/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# project artifacts
+data/raw/*.npz
+data/raw/*.json
+data/processed/*.npz
+data/figures/*.png
+data/models/*.pt
+data/models/*.pth
+data/models/*.csv

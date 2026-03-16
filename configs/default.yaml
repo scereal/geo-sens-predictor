@@ -1,0 +1,39 @@
+seed: 42
+airfoil:
+  name: NACA0012
+  n_points: 256
+ffd:
+  margin_x: 0.15
+  margin_y: 0.15
+  margin_z: 0.05
+  dims: [4, 3, 2]
+  ffd_path: data/raw/airfoil_ffd.xyz
+pygeo:
+  required: true
+sampling:
+  n_samples: 256
+  random_seed: 42
+  dv_bounds:
+    max_camber_mode: [-0.05, 0.05]
+    camber_location_mode: [-0.04, 0.04]
+    max_thickness_mode: [-0.06, 0.06]
+    thickness_location_mode: [-0.04, 0.04]
+    leading_edge_radius_mode: [-0.03, 0.03]
+    trailing_edge_reflex_mode: [-0.03, 0.03]
+raster:
+  grid_size: 64
+  sigma: 0.03
+training:
+  batch_size: 16
+  epochs: 30
+  lr: 0.001
+  val_fraction: 0.2
+  num_workers: 0
+  checkpoint_path: data/models/cnn_latest.pt
+  log_csv_path: data/models/train_log.csv
+  device: auto
+paths:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  figures_dir: data/figures
+  models_dir: data/models
