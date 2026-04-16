@@ -1,3 +1,6 @@
+# ThAp16'26:
+- **Q6**: What are the parameterizations used in industry by Airbus?
+- **Q7**: How can I convert the CAD parameters into design variables using pyGeo or is there an alternative method?
 
 # MoAp13'26:
 - **Q1:** I am obtaining the geometric sensitivity for some arbitrary set of surface nodes, but is this what they actually use in ASO in the industry?
@@ -11,11 +14,7 @@
 	- ![alt text](image.png)
 - **Q2:** The stl file format includes the coordinates for each vertex of each triangle, meaning that there is significant redundancy due to repeated vertex coordinates for intersecting triangles. Would you recommend I delete these redundancies?
 - **Q3:** Would there be someone at Airbus I could have a short conversation with to discuss how this geometric sensitivity prediction model would actually be integrated and hence what restrictions must exist in my training methodology?
-## Goal Clarification
-Maintain
 - **Q4:** Do you think I would need to build the dataset on a compute cluster?
-	- 
-
 
 SaAp11'26: just thoughts after having coffee in the morning
 	• In many respects I am quite disappointed with the progress I have made this semester on this thesis project and I want to 
