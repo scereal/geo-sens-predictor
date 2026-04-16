@@ -1,0 +1,1471 @@
+===== ./README.md =====
+# geo-sens-predictor
+
+Minimal, complete research scaffold for **2D airfoil geometric sensitivity learning** with a pyGeo-driven target and a CNN baseline.
+
+## Purpose
+This repository implements an end-to-end pipeline for:
+
+1. generating a deformed 2D airfoil dataset via an FFD setup (`pyGeo` preferred),
+2. storing samples as \(\{(p^{(k)}, X^{(k)}, S^{(k)})\}_{k=1}^K\),
+3. rasterizing to image-like tensors,
+4. training a simple CNN to predict sensitivity fields,
+5. evaluating prediction error **against the pyGeo geometric sensitivity target**,
+6. plotting training/validation error over epochs.
+
+> Note: this is a **2D study in a degenerate 3D setup** (airfoil points embedded at `z=0`) to match pyGeo's 3D-oriented workflow.
+
+## Repository structure
+
+```text
+README.md
+pyproject.toml
+.gitignore
+configs/
+  default.yaml
+  small_debug.yaml
+data/
+  raw/
+  processed/
+  figures/
+  models/
+src/
+  airfoil_cnn/
+    __init__.py
+    config.py
+    geometry_baseline.py
+    ffd_box.py
+    pygeo_wrapper.py
+    design_variables.py
+    sampling.py
+    dataset_builder.py
+    rasterize.py
+    datasets.py
+    model.py
+    train.py
+    evaluate.py
+    plots.py
+    utils.py
+scripts/
+  generate_dataset.py
+  train_cnn.py
+  evaluate_model.py
+tests/
+  test_sampling.py
+  test_dataset_shapes.py
+  test_rasterize.py
+  test_model_forward.py
+```
+
+## Environment setup
+
+### Python
+- Python 3.11+
+
+### Install package
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+pip install -e .[dev]
+```
+
+### Install pyGeo
+`pyGeo` installation depends on your platform and MDO stack. Typical route:
+- use conda-forge / mdolab instructions,
+- ensure `from pygeo import DVGeometry` works.
+
+If pyGeo is unavailable, the debug config supports an **analytic fallback** (`pygeo.required: false`) so the pipeline remains executable for smoke tests.
+
+## Data definitions
+Each raw sample `k` stores:
+- `p(k)`: design vector, shape `[n_dv]`
+- `X(k)`: deformed coordinates, shape `[n_points, 2]`
+- `S(k)`: geometric sensitivity tensor, shape `[n_points, 2, n_dv]`
+
+Raw outputs:
+- `data/raw/sample_000001.npz`, ...
+- `data/raw/dataset_raw.npz`
+- `data/raw/design_vectors.npz`
+- `data/raw/dataset_metadata.json`
+
+Processed CNN data:
+- `data/processed/dataset_processed.npz` with
+  - `inputs`: `[N, C_in, H, W]`
+  - `targets`: `[N, C_out, H, W]`, where `C_out = 2*n_dv` and channel order is
+    `[dX/dp1_x, dX/dp1_y, dX/dp2_x, dX/dp2_y, ...]`
+
+## CLI run order
+
+1) Generate dataset:
+```bash
+python scripts/generate_dataset.py --config configs/default.yaml
+```
+
+2) Train CNN:
+```bash
+python scripts/train_cnn.py --config configs/default.yaml
+```
+
+3) Evaluate + plots:
+```bash
+python scripts/evaluate_model.py --config configs/default.yaml
+```
+
+For quick CPU smoke runs:
+```bash
+python scripts/generate_dataset.py --config configs/small_debug.yaml
+python scripts/train_cnn.py --config configs/small_debug.yaml
+python scripts/evaluate_model.py --config configs/small_debug.yaml
+```
+
+## Figures produced
+Saved under `data/figures/`:
+- `train_loss.png`
+- `val_loss.png`
+- `loss_curves.png`
+- `per_channel_error.png`
+- `sample_prediction_vs_target.png`
+- sampling/deformation sanity figures
+
+These losses are computed directly against the generated sensitivity target field (pyGeo backend if enabled).
+
+## Limitations
+- Default pyGeo path currently uses finite-difference Jacobian through the wrapper for portability; replace with native pyGeo Jacobian calls if your installation/API supports it.
+- Rasterization uses simple Gaussian splatting; it is transparent but coarse.
+- The CNN is intentionally minimal and not tuned for best accuracy.
+
+## Suggested next steps
+- Point-cloud models (PointNet-like) or graph neural networks over airfoil contours.
+- Adaptive/active sampling in the design space.
+- Uncertainty-aware training and refinement loops.
+- Replace raster target interpolation with higher-fidelity projection.
+-e 
+
+
+===== ./configs/default.yaml =====
+seed: 42
+airfoil:
+  name: NACA0012
+  n_points: 256
+ffd:
+  margin_x: 0.15
+  margin_y: 0.15
+  margin_z: 0.05
+  dims: [4, 3, 2]
+  ffd_path: data/raw/airfoil_ffd.xyz
+pygeo:
+  required: true
+sampling:
+  n_samples: 256
+  random_seed: 42
+  dv_bounds:
+    max_camber_mode: [-0.05, 0.05]
+    camber_location_mode: [-0.04, 0.04]
+    max_thickness_mode: [-0.06, 0.06]
+    thickness_location_mode: [-0.04, 0.04]
+    leading_edge_radius_mode: [-0.03, 0.03]
+    trailing_edge_reflex_mode: [-0.03, 0.03]
+raster:
+  grid_size: 64
+  sigma: 0.03
+training:
+  batch_size: 16
+  epochs: 30
+  lr: 0.001
+  val_fraction: 0.2
+  num_workers: 0
+  checkpoint_path: data/models/cnn_latest.pt
+  log_csv_path: data/models/train_log.csv
+  device: auto
+paths:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  figures_dir: data/figures
+  models_dir: data/models
+-e 
+
+
+===== ./configs/small_debug.yaml =====
+seed: 7
+airfoil:
+  name: NACA0012
+  n_points: 128
+ffd:
+  margin_x: 0.12
+  margin_y: 0.12
+  margin_z: 0.05
+  dims: [4, 3, 2]
+  ffd_path: data/raw/airfoil_ffd.xyz
+pygeo:
+  required: false
+sampling:
+  n_samples: 16
+  random_seed: 7
+  dv_bounds:
+    max_camber_mode: [-0.04, 0.04]
+    camber_location_mode: [-0.03, 0.03]
+    max_thickness_mode: [-0.05, 0.05]
+    thickness_location_mode: [-0.03, 0.03]
+    leading_edge_radius_mode: [-0.02, 0.02]
+    trailing_edge_reflex_mode: [-0.02, 0.02]
+raster:
+  grid_size: 64
+  sigma: 0.035
+training:
+  batch_size: 4
+  epochs: 3
+  lr: 0.001
+  val_fraction: 0.25
+  num_workers: 0
+  checkpoint_path: data/models/cnn_debug.pt
+  log_csv_path: data/models/train_log_debug.csv
+  device: cpu
+paths:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  figures_dir: data/figures
+  models_dir: data/models
+-e 
+
+
+===== ./pyproject.toml =====
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "airfoil-cnn"
+version = "0.1.0"
+description = "End-to-end 2D airfoil deformation sensitivity learning scaffold with pyGeo and PyTorch"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.26",
+  "scipy>=1.11",
+  "matplotlib>=3.8",
+  "torch>=2.2",
+  "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+-e 
+
+
+===== ./repo_dump.txt =====
+-e 
+
+
+===== ./scripts/evaluate_model.py =====
+#!/usr/bin/env python3
+"""CLI: evaluate model and save figures."""
+
+from __future__ import annotations
+
+import argparse
+
+from airfoil_cnn.config import load_config
+from airfoil_cnn.evaluate import run_evaluation
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, default="configs/default.yaml")
+    args = parser.parse_args()
+    cfg = load_config(args.config)
+    out = run_evaluation(cfg)
+    print(f"Evaluation complete. MSE={out['mse']:.6e}")
+
+
+if __name__ == "__main__":
+    main()
+-e 
+
+
+===== ./scripts/generate_dataset.py =====
+#!/usr/bin/env python3
+"""CLI: generate raw and processed dataset."""
+
+from __future__ import annotations
+
+import argparse
+
+from airfoil_cnn.config import load_config
+from airfoil_cnn.dataset_builder import generate_dataset
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, default="configs/default.yaml")
+    args = parser.parse_args()
+    cfg = load_config(args.config)
+    generate_dataset(cfg)
+    print("Dataset generation complete.")
+
+
+if __name__ == "__main__":
+    main()
+-e 
+
+
+===== ./scripts/train_cnn.py =====
+#!/usr/bin/env python3
+"""CLI: train CNN model."""
+
+from __future__ import annotations
+
+import argparse
+
+from airfoil_cnn.config import load_config
+from airfoil_cnn.train import run_training
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, default="configs/default.yaml")
+    args = parser.parse_args()
+    cfg = load_config(args.config)
+    out = run_training(cfg)
+    print(f"Training complete. Final val loss={out['val_losses'][-1]:.6e}")
+
+
+if __name__ == "__main__":
+    main()
+-e 
+
+
+===== ./src/airfoil_cnn.egg-info/SOURCES.txt =====
+README.md
+pyproject.toml
+src/airfoil_cnn/__init__.py
+src/airfoil_cnn/config.py
+src/airfoil_cnn/dataset_builder.py
+src/airfoil_cnn/datasets.py
+src/airfoil_cnn/design_variables.py
+src/airfoil_cnn/evaluate.py
+src/airfoil_cnn/ffd_box.py
+src/airfoil_cnn/geometry_baseline.py
+src/airfoil_cnn/model.py
+src/airfoil_cnn/plots.py
+src/airfoil_cnn/pygeo_wrapper.py
+src/airfoil_cnn/rasterize.py
+src/airfoil_cnn/sampling.py
+src/airfoil_cnn/train.py
+src/airfoil_cnn/utils.py
+src/airfoil_cnn.egg-info/PKG-INFO
+src/airfoil_cnn.egg-info/SOURCES.txt
+src/airfoil_cnn.egg-info/dependency_links.txt
+src/airfoil_cnn.egg-info/requires.txt
+src/airfoil_cnn.egg-info/top_level.txt
+tests/test_dataset_shapes.py
+tests/test_model_forward.py
+tests/test_rasterize.py
+tests/test_sampling.py-e 
+
+
+===== ./src/airfoil_cnn.egg-info/dependency_links.txt =====
+
+-e 
+
+
+===== ./src/airfoil_cnn.egg-info/requires.txt =====
+numpy>=1.26
+scipy>=1.11
+matplotlib>=3.8
+torch>=2.2
+pyyaml>=6.0
+
+[dev]
+pytest>=8.0
+-e 
+
+
+===== ./src/airfoil_cnn.egg-info/top_level.txt =====
+airfoil_cnn
+-e 
+
+
+===== ./src/airfoil_cnn/__init__.py =====
+"""Airfoil CNN package for pyGeo geometric sensitivity learning."""
+
+__all__ = ["config", "dataset_builder", "train", "evaluate"]
+-e 
+
+
+===== ./src/airfoil_cnn/config.py =====
+"""Configuration objects and YAML loader."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+
+@dataclass(slots=True)
+class AirfoilConfig:
+    name: str
+    n_points: int
+
+
+@dataclass(slots=True)
+class FFDConfig:
+    margin_x: float
+    margin_y: float
+    margin_z: float
+    dims: tuple[int, int, int]
+    ffd_path: str
+
+
+@dataclass(slots=True)
+class PyGeoConfig:
+    required: bool = True
+
+
+@dataclass(slots=True)
+class SamplingConfig:
+    n_samples: int
+    random_seed: int
+    dv_bounds: dict[str, tuple[float, float]]
+
+
+@dataclass(slots=True)
+class RasterConfig:
+    grid_size: int
+    sigma: float
+
+
+@dataclass(slots=True)
+class TrainingConfig:
+    batch_size: int
+    epochs: int
+    lr: float
+    val_fraction: float
+    num_workers: int
+    checkpoint_path: str
+    log_csv_path: str
+    device: str
+
+
+@dataclass(slots=True)
+class PathsConfig:
+    raw_dir: str
+    processed_dir: str
+    figures_dir: str
+    models_dir: str
+
+
+@dataclass(slots=True)
+class AppConfig:
+    seed: int
+    airfoil: AirfoilConfig
+    ffd: FFDConfig
+    pygeo: PyGeoConfig
+    sampling: SamplingConfig
+    raster: RasterConfig
+    training: TrainingConfig
+    paths: PathsConfig
+
+
+def _tuple_bounds(d: dict[str, list[float] | tuple[float, float]]) -> dict[str, tuple[float, float]]:
+    return {k: (float(v[0]), float(v[1])) for k, v in d.items()}
+
+
+def load_config(path: str | Path) -> AppConfig:
+    """Load application config from YAML file."""
+    with Path(path).open("r", encoding="utf-8") as f:
+        raw: dict[str, Any] = yaml.safe_load(f)
+
+    return AppConfig(
+        seed=int(raw["seed"]),
+        airfoil=AirfoilConfig(**raw["airfoil"]),
+        ffd=FFDConfig(
+            margin_x=float(raw["ffd"]["margin_x"]),
+            margin_y=float(raw["ffd"]["margin_y"]),
+            margin_z=float(raw["ffd"]["margin_z"]),
+            dims=tuple(raw["ffd"]["dims"]),
+            ffd_path=str(raw["ffd"]["ffd_path"]),
+        ),
+        pygeo=PyGeoConfig(**raw["pygeo"]),
+        sampling=SamplingConfig(
+            n_samples=int(raw["sampling"]["n_samples"]),
+            random_seed=int(raw["sampling"]["random_seed"]),
+            dv_bounds=_tuple_bounds(raw["sampling"]["dv_bounds"]),
+        ),
+        raster=RasterConfig(**raw["raster"]),
+        training=TrainingConfig(**raw["training"]),
+        paths=PathsConfig(**raw["paths"]),
+    )
+-e 
+
+
+===== ./src/airfoil_cnn/dataset_builder.py =====
+"""End-to-end dataset generation from baseline geometry to processed tensors."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+from .config import AppConfig
+from .design_variables import DV_NAMES
+from .ffd_box import create_ffd_box, verify_inside_ffd, write_plot3d_ffd
+from .geometry_baseline import embed_2d_in_3d, generate_naca4
+from .pygeo_wrapper import PyGeoAirfoilWrapper
+from .rasterize import rasterize_sample
+from .sampling import latin_hypercube_sample, plot_sampling_coverage, save_dv_samples
+
+
+def _ensure_dirs(cfg: AppConfig) -> None:
+    for d in [cfg.paths.raw_dir, cfg.paths.processed_dir, cfg.paths.figures_dir, cfg.paths.models_dir]:
+        Path(d).mkdir(parents=True, exist_ok=True)
+
+
+def _plot_airfoil(path: Path, X: np.ndarray, title: str) -> None:
+    fig, ax = plt.subplots(figsize=(6, 2.5))
+    ax.plot(X[:, 0], X[:, 1], "-k")
+    ax.set_aspect("equal")
+    ax.set_title(title)
+    ax.set_xlabel("x/c")
+    ax.set_ylabel("y/c")
+    fig.tight_layout()
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+def generate_dataset(cfg: AppConfig) -> None:
+    """Generate raw and processed datasets.
+
+    Raw each sample:
+      p [n_dv], X [n_points,2], S [n_points,2,n_dv]
+    Processed arrays:
+      inputs [N,C_in,H,W], targets [N,C_out,H,W]
+    """
+    _ensure_dirs(cfg)
+
+    base_2d = generate_naca4(cfg.airfoil.name, cfg.airfoil.n_points)
+    base_3d = embed_2d_in_3d(base_2d)
+
+    lattice = create_ffd_box(base_3d, cfg.ffd.dims, (cfg.ffd.margin_x, cfg.ffd.margin_y, cfg.ffd.margin_z))
+    if not verify_inside_ffd(base_3d, lattice):
+        raise RuntimeError("Baseline points are not inside generated FFD box.")
+    write_plot3d_ffd(cfg.ffd.ffd_path, lattice)
+
+    p_samples, dv_names = latin_hypercube_sample(cfg.sampling.dv_bounds, cfg.sampling.n_samples, cfg.sampling.random_seed)
+    if dv_names != DV_NAMES:
+        # Keep fixed semantic order
+        idx = [dv_names.index(n) for n in DV_NAMES]
+        p_samples = p_samples[:, idx]
+        dv_names = DV_NAMES.copy()
+
+    save_dv_samples(Path(cfg.paths.raw_dir) / "design_vectors.npz", p_samples, dv_names)
+    plot_sampling_coverage(Path(cfg.paths.figures_dir) / "sampling_histograms.png", p_samples, dv_names)
+
+    wrapper = PyGeoAirfoilWrapper(base_2d, cfg.ffd.ffd_path, dv_names, pygeo_required=cfg.pygeo.required)
+
+    all_p, all_X, all_S = [], [], []
+    inputs, targets = [], []
+
+    for k, p in enumerate(p_samples):
+        res = wrapper.deform_and_sens(p)
+        assert res.X.shape == (cfg.airfoil.n_points, 2)
+        assert res.S.shape == (cfg.airfoil.n_points, 2, len(dv_names))
+
+        all_p.append(res.p)
+        all_X.append(res.X)
+        all_S.append(res.S)
+
+        sample_file = Path(cfg.paths.raw_dir) / f"sample_{k+1:06d}.npz"
+        np.savez_compressed(
+            sample_file,
+            p=res.p,
+            X=res.X,
+            S=res.S,
+            airfoil_name=cfg.airfoil.name,
+            n_points=cfg.airfoil.n_points,
+            n_dv=len(dv_names),
+            sample_index=k,
+            backend=res.backend,
+        )
+
+        inp, tgt = rasterize_sample(res.X, res.S, cfg.raster.grid_size, cfg.raster.sigma)
+        inputs.append(inp)
+        targets.append(tgt)
+
+        if k < 3:
+            _plot_airfoil(Path(cfg.paths.figures_dir) / f"deformed_sample_{k+1:02d}.png", res.X, f"Sample {k+1}")
+
+    P = np.stack(all_p)
+    X = np.stack(all_X)
+    S = np.stack(all_S)
+    np.savez_compressed(Path(cfg.paths.raw_dir) / "dataset_raw.npz", p=P, X=X, S=S, dv_names=np.array(dv_names, dtype="U64"))
+
+    in_arr = np.stack(inputs).astype(np.float32)
+    tgt_arr = np.stack(targets).astype(np.float32)
+    np.savez_compressed(Path(cfg.paths.processed_dir) / "dataset_processed.npz", inputs=in_arr, targets=tgt_arr, p=P)
+
+    meta = {
+        "airfoil_name": cfg.airfoil.name,
+        "n_samples": int(P.shape[0]),
+        "n_points": int(cfg.airfoil.n_points),
+        "n_dv": len(dv_names),
+        "dv_names": dv_names,
+        "dv_bounds": {k: list(v) for k, v in cfg.sampling.dv_bounds.items()},
+        "grid_size": cfg.raster.grid_size,
+        "input_shape": list(in_arr.shape),
+        "target_shape": list(tgt_arr.shape),
+    }
+    with (Path(cfg.paths.raw_dir) / "dataset_metadata.json").open("w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+-e 
+
+
+===== ./src/airfoil_cnn/datasets.py =====
+"""PyTorch dataset wrappers."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
+import torch
+from torch.utils.data import Dataset
+
+
+class RasterizedAirfoilDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
+    """Dataset over preprocessed arrays.
+
+    inputs: [N,C_in,H,W], targets: [N,C_out,H,W]
+    """
+
+    def __init__(self, npz_path: str | Path):
+        arr = np.load(npz_path)
+        self.inputs = arr["inputs"].astype(np.float32)
+        self.targets = arr["targets"].astype(np.float32)
+        if self.inputs.shape[0] != self.targets.shape[0]:
+            raise ValueError("inputs/targets sample count mismatch")
+
+    def __len__(self) -> int:
+        return int(self.inputs.shape[0])
+
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+        x = torch.from_numpy(self.inputs[idx])
+        y = torch.from_numpy(self.targets[idx])
+        return x, y
+-e 
+
+
+===== ./src/airfoil_cnn/design_variables.py =====
+"""Interpretable smooth deformation modes for 2D airfoil points."""
+
+from __future__ import annotations
+
+import numpy as np
+
+DV_NAMES = [
+    "max_camber_mode",
+    "camber_location_mode",
+    "max_thickness_mode",
+    "thickness_location_mode",
+    "leading_edge_radius_mode",
+    "trailing_edge_reflex_mode",
+]
+
+
+def mode_matrix(points_2d: np.ndarray, dv_names: list[str]) -> np.ndarray:
+    """Return [n_points, n_dv] mode values affecting y displacement."""
+    x = points_2d[:, 0]
+    y = points_2d[:, 1]
+    sign = np.where(y >= 0.0, 1.0, -1.0)
+
+    modes: list[np.ndarray] = []
+    for name in dv_names:
+        if name == "max_camber_mode":
+            m = np.sin(np.pi * x)
+        elif name == "camber_location_mode":
+            m = np.sin(2 * np.pi * x) * (1 - x)
+        elif name == "max_thickness_mode":
+            m = sign * np.sin(np.pi * x)
+        elif name == "thickness_location_mode":
+            m = sign * np.sin(2 * np.pi * x)
+        elif name == "leading_edge_radius_mode":
+            m = sign * np.exp(-((x - 0.05) ** 2) / 0.002)
+        elif name == "trailing_edge_reflex_mode":
+            m = np.exp(-((x - 0.95) ** 2) / 0.004)
+        else:
+            raise ValueError(f"Unknown DV {name}")
+        modes.append(m)
+    return np.stack(modes, axis=-1)
+
+
+def apply_modes(points_2d: np.ndarray, p: np.ndarray, dv_names: list[str]) -> tuple[np.ndarray, np.ndarray]:
+    """Apply modes to produce deformed points and analytic sensitivity.
+
+    Returns:
+        X: [n_points, 2]
+        S: [n_points, 2, n_dv] where S[:,1,:] = dY/dp and S[:,0,:]=0.
+    """
+    m = mode_matrix(points_2d, dv_names)
+    dy = m @ p
+    X = points_2d.copy()
+    X[:, 1] = points_2d[:, 1] + dy
+
+    n_points, n_dv = m.shape
+    S = np.zeros((n_points, 2, n_dv), dtype=float)
+    S[:, 1, :] = m
+    return X, S
+-e 
+
+
+===== ./src/airfoil_cnn/evaluate.py =====
+"""Model evaluation helpers and plotting."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
+import torch
+
+from .config import AppConfig
+from .datasets import RasterizedAirfoilDataset
+from .model import SimpleUNet
+from .plots import plot_per_channel_error, plot_prediction_vs_target
+from .utils import resolve_device
+
+
+def run_evaluation(cfg: AppConfig) -> dict[str, float]:
+    ds = RasterizedAirfoilDataset(Path(cfg.paths.processed_dir) / "dataset_processed.npz")
+    x0, y0 = ds[0]
+    model = SimpleUNet(x0.shape[0], y0.shape[0])
+    ckpt = torch.load(cfg.training.checkpoint_path, map_location="cpu")
+    model.load_state_dict(ckpt["model_state"])
+
+    device = resolve_device(cfg.training.device)
+    model.to(device)
+    model.eval()
+
+    all_pred, all_true = [], []
+    with torch.no_grad():
+        for x, y in ds:
+            xb = x.unsqueeze(0).to(device)
+            pred = model(xb).squeeze(0).cpu().numpy()
+            all_pred.append(pred)
+            all_true.append(y.numpy())
+
+    pred_arr = np.stack(all_pred)
+    true_arr = np.stack(all_true)
+    mse = ((pred_arr - true_arr) ** 2).mean()
+    channel_mse = ((pred_arr - true_arr) ** 2).mean(axis=(0, 2, 3))
+
+    Path(cfg.paths.figures_dir).mkdir(parents=True, exist_ok=True)
+    plot_per_channel_error(channel_mse, Path(cfg.paths.figures_dir) / "per_channel_error.png")
+    plot_prediction_vs_target(pred_arr[0], true_arr[0], Path(cfg.paths.figures_dir) / "sample_prediction_vs_target.png")
+
+    out_path = Path(cfg.paths.models_dir) / "evaluation_metrics.npz"
+    np.savez_compressed(out_path, mse=mse, channel_mse=channel_mse)
+    return {"mse": float(mse)}
+-e 
+
+
+===== ./src/airfoil_cnn/ffd_box.py =====
+"""Create a simple Plot3D FFD box around airfoil points."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
+
+
+def create_ffd_box(points_3d: np.ndarray, dims: tuple[int, int, int], margins: tuple[float, float, float]) -> np.ndarray:
+    """Create structured FFD control lattice [ni,nj,nk,3]."""
+    if points_3d.shape[1] != 3:
+        raise ValueError("points_3d must be [n_points,3]")
+    ni, nj, nk = dims
+    mx, my, mz = margins
+    mins = points_3d.min(axis=0) - np.array([mx, my, mz])
+    maxs = points_3d.max(axis=0) + np.array([mx, my, mz])
+
+    xs = np.linspace(mins[0], maxs[0], ni)
+    ys = np.linspace(mins[1], maxs[1], nj)
+    zs = np.linspace(mins[2], maxs[2], nk)
+
+    lattice = np.zeros((ni, nj, nk, 3), dtype=float)
+    for i, x in enumerate(xs):
+        for j, y in enumerate(ys):
+            for k, z in enumerate(zs):
+                lattice[i, j, k] = [x, y, z]
+    return lattice
+
+
+def write_plot3d_ffd(path: str | Path, lattice: np.ndarray) -> None:
+    """Write one-block Plot3D style xyz file for pyGeo DVGeometry."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ni, nj, nk, _ = lattice.shape
+    with path.open("w", encoding="utf-8") as f:
+        f.write("1\n")
+        f.write(f"{ni} {nj} {nk}\n")
+        for c in range(3):
+            for k in range(nk):
+                for j in range(nj):
+                    vals = [f"{lattice[i, j, k, c]:.12e}" for i in range(ni)]
+                    f.write(" ".join(vals) + "\n")
+
+
+def verify_inside_ffd(points_3d: np.ndarray, lattice: np.ndarray) -> bool:
+    mins = lattice.reshape(-1, 3).min(axis=0)
+    maxs = lattice.reshape(-1, 3).max(axis=0)
+    inside = np.all(points_3d >= mins - 1e-10) and np.all(points_3d <= maxs + 1e-10)
+    return bool(inside)
+-e 
+
+
+===== ./src/airfoil_cnn/geometry_baseline.py =====
+"""Baseline analytical airfoil generators."""
+
+from __future__ import annotations
+
+import numpy as np
+
+
+def _naca4_params(name: str) -> tuple[float, float, float]:
+    name = name.upper().replace("NACA", "")
+    if len(name) != 4 or not name.isdigit():
+        raise ValueError(f"Expected NACA4 name, got {name}")
+    m = int(name[0]) / 100.0
+    p = int(name[1]) / 10.0
+    t = int(name[2:]) / 100.0
+    return m, p, t
+
+
+def generate_naca4(name: str, n_points: int = 256) -> np.ndarray:
+    """Return ordered 2D contour points [n_points, 2] from TE upper to TE lower."""
+    m, p, t = _naca4_params(name)
+    if n_points % 2 != 0:
+        raise ValueError("n_points must be even")
+    n_half = n_points // 2
+    beta = np.linspace(0.0, np.pi, n_half)
+    x = 0.5 * (1.0 - np.cos(beta))
+
+    yt = 5.0 * t * (
+        0.2969 * np.sqrt(x)
+        - 0.1260 * x
+        - 0.3516 * x**2
+        + 0.2843 * x**3
+        - 0.1015 * x**4
+    )
+
+    if m == 0.0:
+        yc = np.zeros_like(x)
+        dyc_dx = np.zeros_like(x)
+    else:
+        yc = np.where(
+            x < p,
+            m / (p**2) * (2 * p * x - x**2),
+            m / ((1 - p) ** 2) * ((1 - 2 * p) + 2 * p * x - x**2),
+        )
+        dyc_dx = np.where(
+            x < p,
+            2 * m / (p**2) * (p - x),
+            2 * m / ((1 - p) ** 2) * (p - x),
+        )
+
+    theta = np.arctan(dyc_dx)
+    xu = x - yt * np.sin(theta)
+    yu = yc + yt * np.cos(theta)
+    xl = x + yt * np.sin(theta)
+    yl = yc - yt * np.cos(theta)
+
+    x_contour = np.concatenate([xu[::-1], xl[1:]])
+    y_contour = np.concatenate([yu[::-1], yl[1:]])
+    coords = np.column_stack([x_contour, y_contour])
+    # match exact n_points (TE duplicated if needed)
+    if coords.shape[0] < n_points:
+        coords = np.vstack([coords, coords[-1:]])
+    return coords[:n_points]
+
+
+def embed_2d_in_3d(points_2d: np.ndarray) -> np.ndarray:
+    """Embed [n_points, 2] into [n_points, 3] with z=0."""
+    if points_2d.ndim != 2 or points_2d.shape[1] != 2:
+        raise ValueError("points_2d must be [n_points,2]")
+    z = np.zeros((points_2d.shape[0], 1), dtype=points_2d.dtype)
+    return np.hstack([points_2d, z])
+-e 
+
+
+===== ./src/airfoil_cnn/model.py =====
+"""Simple CNN baseline for sensitivity field prediction."""
+
+from __future__ import annotations
+
+import torch
+from torch import nn
+
+
+class ConvBlock(nn.Module):
+    def __init__(self, in_ch: int, out_ch: int):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_ch, out_ch, 3, padding=1),
+            nn.ReLU(inplace=True),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+
+
+class SimpleUNet(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int, base: int = 16):
+        super().__init__()
+        self.enc1 = ConvBlock(in_channels, base)
+        self.pool1 = nn.MaxPool2d(2)
+        self.enc2 = ConvBlock(base, base * 2)
+        self.pool2 = nn.MaxPool2d(2)
+
+        self.bottleneck = ConvBlock(base * 2, base * 4)
+
+        self.up2 = nn.ConvTranspose2d(base * 4, base * 2, 2, stride=2)
+        self.dec2 = ConvBlock(base * 4, base * 2)
+        self.up1 = nn.ConvTranspose2d(base * 2, base, 2, stride=2)
+        self.dec1 = ConvBlock(base * 2, base)
+        self.head = nn.Conv2d(base, out_channels, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        e1 = self.enc1(x)
+        e2 = self.enc2(self.pool1(e1))
+        b = self.bottleneck(self.pool2(e2))
+        d2 = self.up2(b)
+        d2 = self.dec2(torch.cat([d2, e2], dim=1))
+        d1 = self.up1(d2)
+        d1 = self.dec1(torch.cat([d1, e1], dim=1))
+        return self.head(d1)
+-e 
+
+
+===== ./src/airfoil_cnn/plots.py =====
+"""Plot helpers for training and evaluation artifacts."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+
+def plot_losses(train_losses: list[float], val_losses: list[float], fig_dir: str | Path) -> None:
+    fig_dir = Path(fig_dir)
+    fig_dir.mkdir(parents=True, exist_ok=True)
+    epochs = np.arange(1, len(train_losses) + 1)
+
+    fig, ax = plt.subplots()
+    ax.plot(epochs, train_losses, label="train")
+    ax.set_title("Training loss vs pyGeo target")
+    ax.set_xlabel("epoch")
+    ax.set_ylabel("MSE")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(fig_dir / "train_loss.png", dpi=150)
+    plt.close(fig)
+
+    fig, ax = plt.subplots()
+    ax.plot(epochs, val_losses, label="val", color="tab:orange")
+    ax.set_title("Validation loss vs pyGeo target")
+    ax.set_xlabel("epoch")
+    ax.set_ylabel("MSE")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(fig_dir / "val_loss.png", dpi=150)
+    plt.close(fig)
+
+    fig, ax = plt.subplots()
+    ax.plot(epochs, train_losses, label="train")
+    ax.plot(epochs, val_losses, label="val")
+    ax.set_title("CNN error against pyGeo sensitivity target")
+    ax.set_xlabel("epoch")
+    ax.set_ylabel("MSE")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(fig_dir / "loss_curves.png", dpi=150)
+    plt.close(fig)
+
+
+def plot_per_channel_error(channel_mse: np.ndarray, fig_path: str | Path) -> None:
+    fig, ax = plt.subplots(figsize=(8, 3))
+    ax.bar(np.arange(len(channel_mse)), channel_mse)
+    ax.set_title("Per-channel MSE (prediction vs pyGeo target)")
+    ax.set_xlabel("channel index")
+    ax.set_ylabel("MSE")
+    fig.tight_layout()
+    fig.savefig(fig_path, dpi=150)
+    plt.close(fig)
+
+
+def plot_prediction_vs_target(pred: np.ndarray, target: np.ndarray, fig_path: str | Path, n_show: int = 4) -> None:
+    n_show = min(n_show, pred.shape[0])
+    fig, axes = plt.subplots(2, n_show, figsize=(3 * n_show, 6))
+    for i in range(n_show):
+        im0 = axes[0, i].imshow(target[i], origin="lower", cmap="coolwarm")
+        axes[0, i].set_title(f"target ch{i}")
+        plt.colorbar(im0, ax=axes[0, i], fraction=0.046)
+
+        im1 = axes[1, i].imshow(pred[i], origin="lower", cmap="coolwarm")
+        axes[1, i].set_title(f"pred ch{i}")
+        plt.colorbar(im1, ax=axes[1, i], fraction=0.046)
+    fig.suptitle("Held-out sample: pyGeo target vs CNN prediction")
+    fig.tight_layout()
+    fig.savefig(fig_path, dpi=150)
+    plt.close(fig)
+-e 
+
+
+===== ./src/airfoil_cnn/pygeo_wrapper.py =====
+"""pyGeo integration layer for applying design variables and sensitivities."""
+
+from __future__ import annotations
+
+import warnings
+from dataclasses import dataclass
+
+import numpy as np
+
+from .design_variables import apply_modes
+
+
+@dataclass(slots=True)
+class DeformationResult:
+    p: np.ndarray  # [n_dv]
+    X: np.ndarray  # [n_points,2]
+    S: np.ndarray  # [n_points,2,n_dv]
+    backend: str
+
+
+class PyGeoAirfoilWrapper:
+    """Wrapper that prefers pyGeo but supports deterministic fallback mode.
+
+    The fallback keeps pipeline runnable in environments where pyGeo is unavailable.
+    """
+
+    def __init__(self, points_2d: np.ndarray, ffd_path: str, dv_names: list[str], pygeo_required: bool = True):
+        self.points_2d = points_2d
+        self.points_3d = np.column_stack([points_2d, np.zeros(points_2d.shape[0])])
+        self.ffd_path = ffd_path
+        self.dv_names = dv_names
+        self.pygeo_required = pygeo_required
+        self._dvgeo = None
+        self._use_pygeo = False
+        self._try_init_pygeo()
+
+    def _try_init_pygeo(self) -> None:
+        try:
+            from pygeo import DVGeometry  # type: ignore
+
+            dvgeo = DVGeometry(self.ffd_path)
+            dvgeo.addPointSet(self.points_3d, "airfoil")
+            self._dvgeo = dvgeo
+            self._use_pygeo = True
+        except Exception as exc:  # noqa: BLE001
+            if self.pygeo_required:
+                raise RuntimeError(
+                    "pyGeo initialization failed. Install pyGeo or set pygeo.required=false in config for fallback mode."
+                ) from exc
+            warnings.warn(f"Using analytic fallback instead of pyGeo: {exc}", RuntimeWarning)
+            self._use_pygeo = False
+
+    def deform_and_sens(self, p: np.ndarray) -> DeformationResult:
+        """Apply design vector and return X,S.
+
+        S has shape [n_points,2,n_dv] in final 2D representation.
+        """
+        p = np.asarray(p, dtype=float)
+        if p.ndim != 1 or p.shape[0] != len(self.dv_names):
+            raise ValueError("Invalid p shape")
+
+        # Fallback is deterministic and used for tests/debug.
+        if not self._use_pygeo:
+            X, S = apply_modes(self.points_2d, p, self.dv_names)
+            return DeformationResult(p=p, X=X, S=S, backend="analytic-fallback")
+
+        # pyGeo path currently computes deformed coordinates and finite-difference sensitivity.
+        # If pyGeo native Jacobian APIs are available in your setup, replace FD section accordingly.
+        try:
+            assert self._dvgeo is not None
+            self._dvgeo.setDesignVars({name: float(val) for name, val in zip(self.dv_names, p, strict=True)})
+            x_def_3d = self._dvgeo.update("airfoil")
+            X = x_def_3d[:, :2]
+
+            eps = 1e-5
+            n_points = X.shape[0]
+            n_dv = len(self.dv_names)
+            S = np.zeros((n_points, 2, n_dv), dtype=float)
+            for i, name in enumerate(self.dv_names):
+                p_eps = p.copy()
+                p_eps[i] += eps
+                self._dvgeo.setDesignVars({n: float(v) for n, v in zip(self.dv_names, p_eps, strict=True)})
+                x_eps = self._dvgeo.update("airfoil")[:, :2]
+                S[:, :, i] = (x_eps - X) / eps
+            self._dvgeo.setDesignVars({name: float(val) for name, val in zip(self.dv_names, p, strict=True)})
+            return DeformationResult(p=p, X=X, S=S, backend="pygeo")
+        except Exception as exc:  # noqa: BLE001
+            if self.pygeo_required:
+                raise RuntimeError("pyGeo deformation/sensitivity call failed") from exc
+            warnings.warn(f"pyGeo failed at runtime; using fallback modes: {exc}", RuntimeWarning)
+            X, S = apply_modes(self.points_2d, p, self.dv_names)
+            return DeformationResult(p=p, X=X, S=S, backend="analytic-fallback")
+-e 
+
+
+===== ./src/airfoil_cnn/rasterize.py =====
+"""Rasterization of pointwise geometry and sensitivities to grid tensors."""
+
+from __future__ import annotations
+
+import numpy as np
+
+
+def _grid_xy(grid_size: int) -> tuple[np.ndarray, np.ndarray]:
+    xv = np.linspace(0.0, 1.0, grid_size)
+    yv = np.linspace(-0.5, 0.5, grid_size)
+    return np.meshgrid(xv, yv, indexing="xy")
+
+
+def rasterize_sample(X: np.ndarray, S: np.ndarray, grid_size: int, sigma: float) -> tuple[np.ndarray, np.ndarray]:
+    """Map sample to CNN-ready arrays.
+
+    Args:
+        X: [n_points,2]
+        S: [n_points,2,n_dv]
+    Returns:
+        inp: [1,H,W] occupancy-like smooth mask
+        tgt: [2*n_dv,H,W] sensitivity channels
+    """
+    n_points = X.shape[0]
+    n_dv = S.shape[2]
+    gx, gy = _grid_xy(grid_size)
+
+    # gaussian splat weights [n_points,H,W]
+    dx = gx[None, :, :] - X[:, 0][:, None, None]
+    dy = gy[None, :, :] - X[:, 1][:, None, None]
+    d2 = dx**2 + dy**2
+    w = np.exp(-0.5 * d2 / (sigma**2))
+
+    occ = w.max(axis=0)
+    occ = occ[None, :, :]
+
+    denom = w.sum(axis=0) + 1e-8
+    tgt = np.zeros((2 * n_dv, grid_size, grid_size), dtype=np.float32)
+    for j in range(n_dv):
+        sx = (w * S[:, 0, j][:, None, None]).sum(axis=0) / denom
+        sy = (w * S[:, 1, j][:, None, None]).sum(axis=0) / denom
+        tgt[2 * j] = sx
+        tgt[2 * j + 1] = sy
+
+    return occ.astype(np.float32), tgt.astype(np.float32)
+-e 
+
+
+===== ./src/airfoil_cnn/sampling.py =====
+"""Sampling utilities for design vectors."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy.stats import qmc
+
+
+def latin_hypercube_sample(bounds: dict[str, tuple[float, float]], n_samples: int, seed: int) -> tuple[np.ndarray, list[str]]:
+    names = list(bounds.keys())
+    n_dv = len(names)
+    sampler = qmc.LatinHypercube(d=n_dv, seed=seed)
+    u = sampler.random(n=n_samples)
+    l = np.array([bounds[n][0] for n in names], dtype=float)
+    h = np.array([bounds[n][1] for n in names], dtype=float)
+    p = qmc.scale(u, l, h)
+    return p, names
+
+
+def save_dv_samples(path: str | Path, p: np.ndarray, names: list[str]) -> None:
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(path, p=p, names=np.array(names, dtype="U64"))
+
+
+def plot_sampling_coverage(path: str | Path, p: np.ndarray, names: list[str]) -> None:
+    n_dv = p.shape[1]
+    fig, axes = plt.subplots(1, n_dv, figsize=(3 * n_dv, 3))
+    if n_dv == 1:
+        axes = [axes]
+    for i, ax in enumerate(axes):
+        ax.hist(p[:, i], bins=12, alpha=0.8)
+        ax.set_title(names[i])
+        ax.set_xlabel("value")
+        ax.set_ylabel("count")
+    fig.tight_layout()
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+-e 
+
+
+===== ./src/airfoil_cnn/train.py =====
+"""Training entry points."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
+import torch
+from torch import nn
+from torch.utils.data import DataLoader, Subset, random_split
+
+from .config import AppConfig
+from .datasets import RasterizedAirfoilDataset
+from .model import SimpleUNet
+from .plots import plot_losses
+from .utils import resolve_device, set_seed, write_epoch_log
+
+
+def run_training(cfg: AppConfig) -> dict[str, list[float]]:
+    set_seed(cfg.seed)
+    ds = RasterizedAirfoilDataset(Path(cfg.paths.processed_dir) / "dataset_processed.npz")
+    n_total = len(ds)
+    n_val = max(1, int(round(cfg.training.val_fraction * n_total)))
+    n_train = n_total - n_val
+    if n_train < 1:
+        raise ValueError("Training split is empty")
+
+    train_ds, val_ds = random_split(ds, [n_train, n_val], generator=torch.Generator().manual_seed(cfg.seed))
+    train_loader = DataLoader(train_ds, batch_size=cfg.training.batch_size, shuffle=True, num_workers=cfg.training.num_workers)
+    val_loader = DataLoader(val_ds, batch_size=cfg.training.batch_size, shuffle=False, num_workers=cfg.training.num_workers)
+
+    sample_x, sample_y = ds[0]
+    model = SimpleUNet(in_channels=sample_x.shape[0], out_channels=sample_y.shape[0])
+    device = resolve_device(cfg.training.device)
+    model.to(device)
+
+    opt = torch.optim.Adam(model.parameters(), lr=cfg.training.lr)
+    loss_fn = nn.MSELoss()
+
+    train_losses: list[float] = []
+    val_losses: list[float] = []
+    logs: list[dict[str, float]] = []
+    best_val = float("inf")
+
+    for epoch in range(1, cfg.training.epochs + 1):
+        model.train()
+        train_acc = 0.0
+        for xb, yb in train_loader:
+            xb, yb = xb.to(device), yb.to(device)
+            opt.zero_grad(set_to_none=True)
+            pred = model(xb)
+            loss = loss_fn(pred, yb)
+            loss.backward()
+            opt.step()
+            train_acc += float(loss.item()) * xb.shape[0]
+        train_epoch = train_acc / n_train
+
+        model.eval()
+        val_acc = 0.0
+        with torch.no_grad():
+            for xb, yb in val_loader:
+                xb, yb = xb.to(device), yb.to(device)
+                pred = model(xb)
+                loss = loss_fn(pred, yb)
+                val_acc += float(loss.item()) * xb.shape[0]
+        val_epoch = val_acc / n_val
+
+        train_losses.append(train_epoch)
+        val_losses.append(val_epoch)
+        logs.append({"epoch": float(epoch), "train_loss": train_epoch, "val_loss": val_epoch})
+
+        ckpt = {
+            "epoch": epoch,
+            "model_state": model.state_dict(),
+            "opt_state": opt.state_dict(),
+            "train_losses": train_losses,
+            "val_losses": val_losses,
+        }
+        Path(cfg.training.checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
+        torch.save(ckpt, cfg.training.checkpoint_path)
+        if val_epoch < best_val:
+            best_val = val_epoch
+            torch.save(ckpt, Path(cfg.paths.models_dir) / "cnn_best.pt")
+
+    write_epoch_log(cfg.training.log_csv_path, logs)
+    plot_losses(train_losses, val_losses, cfg.paths.figures_dir)
+    return {"train_losses": train_losses, "val_losses": val_losses}
+
+
+def quick_smoke_train(inputs: np.ndarray, targets: np.ndarray, epochs: int = 1) -> float:
+    """Tiny in-memory train helper used by tests."""
+    device = torch.device("cpu")
+    x = torch.from_numpy(inputs)
+    y = torch.from_numpy(targets)
+    ds = list(zip(x, y, strict=True))
+    loader = DataLoader(ds, batch_size=2, shuffle=True)
+    model = SimpleUNet(inputs.shape[1], targets.shape[1], base=8).to(device)
+    opt = torch.optim.Adam(model.parameters(), lr=1e-3)
+    loss_fn = nn.MSELoss()
+    loss_val = 0.0
+    for _ in range(epochs):
+        for xb, yb in loader:
+            pred = model(xb)
+            loss = loss_fn(pred, yb)
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            loss_val = float(loss.item())
+    return loss_val
+-e 
+
+
+===== ./src/airfoil_cnn/utils.py =====
+"""General utilities."""
+
+from __future__ import annotations
+
+import csv
+import random
+from pathlib import Path
+
+import numpy as np
+import torch
+
+
+def set_seed(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+
+def resolve_device(name: str) -> torch.device:
+    if name == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return torch.device(name)
+
+
+def write_epoch_log(path: str | Path, rows: list[dict[str, float]]) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["epoch", "train_loss", "val_loss"])
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+-e 
+
+
+===== ./tests/test_dataset_shapes.py =====
+from __future__ import annotations
+
+import numpy as np
+
+from airfoil_cnn.design_variables import DV_NAMES, apply_modes
+from airfoil_cnn.geometry_baseline import generate_naca4
+from airfoil_cnn.rasterize import rasterize_sample
+from airfoil_cnn.train import quick_smoke_train
+
+
+def test_raw_shapes_and_smoke_train() -> None:
+    n_points = 128
+    n_dv = len(DV_NAMES)
+    base = generate_naca4("NACA0012", n_points=n_points)
+
+    rng = np.random.default_rng(1)
+    all_inp, all_tgt = [], []
+    for _ in range(4):
+        p = rng.normal(scale=0.01, size=(n_dv,))
+        X, S = apply_modes(base, p, DV_NAMES)
+        assert p.shape == (n_dv,)
+        assert X.shape == (n_points, 2)
+        assert S.shape == (n_points, 2, n_dv)
+        inp, tgt = rasterize_sample(X, S, grid_size=64, sigma=0.03)
+        all_inp.append(inp)
+        all_tgt.append(tgt)
+
+    inputs = np.stack(all_inp).astype(np.float32)
+    targets = np.stack(all_tgt).astype(np.float32)
+    final_loss = quick_smoke_train(inputs, targets, epochs=1)
+    assert np.isfinite(final_loss)
+-e 
+
+
+===== ./tests/test_model_forward.py =====
+from __future__ import annotations
+
+import torch
+
+from airfoil_cnn.model import SimpleUNet
+
+
+def test_model_forward_shape() -> None:
+    model = SimpleUNet(in_channels=1, out_channels=12)
+    x = torch.randn(2, 1, 64, 64)
+    y = model(x)
+    assert y.shape == (2, 12, 64, 64)
+-e 
+
+
+===== ./tests/test_rasterize.py =====
+from __future__ import annotations
+
+import numpy as np
+
+from airfoil_cnn.rasterize import rasterize_sample
+
+
+def test_rasterized_shapes() -> None:
+    n_points = 64
+    n_dv = 6
+    x = np.linspace(0.0, 1.0, n_points)
+    y = 0.08 * np.sin(np.pi * x)
+    X = np.column_stack([x, y])
+    S = np.zeros((n_points, 2, n_dv), dtype=float)
+    S[:, 1, :] = 1.0
+    inp, tgt = rasterize_sample(X, S, grid_size=64, sigma=0.03)
+    assert inp.shape == (1, 64, 64)
+    assert tgt.shape == (12, 64, 64)
+-e 
+
+
+===== ./tests/test_sampling.py =====
+from __future__ import annotations
+
+import numpy as np
+
+from airfoil_cnn.sampling import latin_hypercube_sample
+
+
+def test_lhs_shapes_and_bounds() -> None:
+    bounds = {"a": (-1.0, 1.0), "b": (2.0, 4.0), "c": (0.0, 0.5)}
+    p, names = latin_hypercube_sample(bounds, n_samples=32, seed=10)
+    assert p.shape == (32, 3)
+    assert names == ["a", "b", "c"]
+    lows = np.array([bounds[n][0] for n in names])
+    highs = np.array([bounds[n][1] for n in names])
+    assert np.all(p >= lows - 1e-12)
+    assert np.all(p <= highs + 1e-12)
+-e 
+
+
