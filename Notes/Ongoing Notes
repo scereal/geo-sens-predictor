@@ -1,6 +1,11 @@
 # ThAp16'26:
 - **Q6**: What are the parameterizations used in industry by Airbus?
 - **Q7**: How can I convert the CAD parameters into design variables using pyGeo or is there an alternative method?
+- **Q8**: Does it make more sense to do a study on 2D airfoils first to understand somewhat how to generate a dataset that makes sense as well as to see how the GCNN performs on a simplified arrangement?
+## Goal Clarification:
+- **Q9**: Is the purpose of my project to build evidence that a neural network model can more effectively predict the geometric sensitivity term? Or to demonstrate how this approach is feasible and applicable to an industry setting with the CATIA V5 files that they would be working with?
+	- This distinction is particularly important as for this approach to be taken in industry, a similar dataset would need to be generated for their outer mold line surface geometries which may not be a trivial task...
+	- If generating this dataset for NN training is not a feasible task in industry, then the entire approach falls through as there is no way for the methodology of the offline training phase to be conducted
 
 # MoAp13'26:
 - **Q1:** I am obtaining the geometric sensitivity for some arbitrary set of surface nodes, but is this what they actually use in ASO in the industry?
