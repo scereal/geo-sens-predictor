@@ -1,0 +1,74 @@
+
+# MoAp13'26:
+- **Q1:** I am obtaining the geometric sensitivity for some arbitrary set of surface nodes, but is this what they actually use in ASO in the industry?
+	- What they do in industry is parametrize the surface using a set number of points and (I think) some sort of algorithm or preset parametrizing equation for converting the values into the surface contour
+	- then, for the purposes of use in the CFD simulation, the surface contour is discretized using a quite fine mesh
+	- the parametrizing points from the CAD are usually using some formulae, e.g. NURBs or Hicks-Henne bumps, etc.
+- **Q:** It seems that for certain applications, constraints on the wing size and 
+	
+- https://www.youtube.com/watch?v=wJQQFUcHO5U
+	- Block diagonal decomposition
+	- ![alt text](image.png)
+- **Q2:** The stl file format includes the coordinates for each vertex of each triangle, meaning that there is significant redundancy due to repeated vertex coordinates for intersecting triangles. Would you recommend I delete these redundancies?
+- **Q3:** Would there be someone at Airbus I could have a short conversation with to discuss how this geometric sensitivity prediction model would actually be integrated and hence what restrictions must exist in my training methodology?
+## Goal Clarification
+Maintain
+- **Q4:** Do you think I would need to build the dataset on a compute cluster?
+	- 
+
+
+SaAp11'26: just thoughts after having coffee in the morning
+	• In many respects I am quite disappointed with the progress I have made this semester on this thesis project and I want to 
+	• have struggled to manage my time and would like to have an honest conversation with you about my progress this semester with the hope 
+	• How to keep on track and make progress
+
+# MoFe23'26: 1on1
+- Could use Latin hypercube sampling for building dataset
+- Concerning literature review
+	- Looking at existing frameworks for ASO which use accurate and efficient adjoint methods
+	- Effective for working with large PDE-constrained optimization problems such as this one
+	- There are 2 main problems
+		- Dealing with computing the Jacobian between surface mesh points and adjustments to local/global variables
+		- Understanding how to deal with a new feature addition (e.g. a winglet that wasn't there) and how this impacts the CFD
+			- How would you generate a dataset that can train a model to be able to compute sensitivity w.r.t. adding a new feature?
+- Was speaking with Airbus and they said the CATIA geometry can have defined global variables for things like sweep or twist
+	- If NX had that as well, this could be a possibility for the honours thesis
+	- But for my project, the focus is local and not industry level, so we are just trying to determine if you can train a model and if it were to be applied to shape optimization, then they could find a CATIA-based way to generate a dataset for training a model
+- If I am able to generate a dataset for perturbing based on an FFD-based approach, how does this apply to modifications in industry which are based around modifying global parameters native to their 
+- How do we match our surface nodes with the industry CAD model so that the whole purpose is fulfilled of being able to apply the derivative to the CATIA V5 CAD model 
+- For the addition of an entire feature, wouldn't it make more sense to just run the CFD again and then look at the change in the objective function outputs
+	- The derivative when you are adding a completely new feature 
+	
+
+# FrFe20'26: Chat in the lab
+- For Literature Review
+	- Focus just on what has been done for finding the last derivative term
+		- Don't go into the methods of optimizing the entire objective functions w.r.t. design variables
+	- Discuss the problem of having the rest of the optimization procedure computed on HPC, but then having a bottleneck in computing the last term because it can only be done on a Windows device with significantly less compute
+	- Then look at what has been done to compute 
+	- Answer to Q5: first building dataset, and then
+	- Propose different methods of Reduced order Modelling for computing that term
+		- In order to replace the bottleneck
+	- As analytical derivatives are not always accessible in industry as they are using CATIA V5, there is the necessity to 
+
+# MoFe16’26: Talking about pyGeo findings
+- which derivatives we are actually trying to compute
+- Using pyGeo to produce dataset to train NN to compute desired derivative without touching CAD, rather only modifying select design parameters
+	- Want to build a model that can produce the derivative for any modifications
+		- Potentially including adding a wing tip or winglet
+- totalSensitivityProd(vec, ptSetName, comm=None, config=None)
+	- Says that it outputs the following
+	(dX ⃗_pt)/(dX_DV ):
+- X ⃗_pt≝Keys are the design variable names and values are the derivative seeds of the corresponding design variable X_DV=design variables inputted by the user in given set of functions:		
+	- totalSensitivity(dIdpt, ptSetName, comm=None, config=None)
+		- dI/d_pt   (dX_pt)/(dX_DV )
+	- To work on for next week:
+		- Playing around with pyGeo and outputting deformed geometries
+		- Looking at the outputted derivative values
+	- Plot3d file format: https://www.grc.nasa.gov/www/wind/valid/plot3d.html
+	- writePointSet
+		- fileName - don't include extension, one will automatically be added
+	- writeTecplot(fileName, solutionTime=None)
+		- Paraview can't read solutionTime value
+	
+
