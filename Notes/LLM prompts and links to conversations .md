@@ -7,6 +7,7 @@
 
 https://chatgpt.com/share/69e09cd7-2c90-83ea-8233-020aebc72972
 - Search the web for an existing NASA CRM point set with the coupled python file which defines global and local Design Variables that match the analogous CAD parameters that would be used in industry for geometric manipulation of the surface
+- Link to the GIF: https://github.com/mdolab/pygeo/blob/main/doc/images/DPW4_FFD-27745.gif
 
 P2: I am looking to use the Common Research Model from NASA and find a way to coarsen the model for training a neural network to predict the geometric sensitivity between the surface nodes and a vector of pre-determined design variables each of which perturbs the surface according to some global or local means (adjusting the camber /thickness of the wing at a certain span, adjusting the sweep of the wing, adjusting the twist of the wing, increasing the tilt of the )
 
