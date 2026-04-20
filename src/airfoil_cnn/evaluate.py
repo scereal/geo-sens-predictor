@@ -10,7 +10,7 @@ import torch
 from .config import AppConfig
 from .datasets import RasterizedAirfoilDataset
 from .model import SimpleUNet
-from .plots import plot_per_channel_error, plot_prediction_vs_target
+from .plots import plot_per_channel_error, plot_prediction_vs_target, plot_sample_predictions
 from .utils import resolve_device
 
 
@@ -41,6 +41,7 @@ def run_evaluation(cfg: AppConfig) -> dict[str, float]:
     Path(cfg.paths.figures_dir).mkdir(parents=True, exist_ok=True)
     plot_per_channel_error(channel_mse, Path(cfg.paths.figures_dir) / "per_channel_error.png")
     plot_prediction_vs_target(pred_arr[0], true_arr[0], Path(cfg.paths.figures_dir) / "sample_prediction_vs_target.png")
+    plot_sample_predictions(pred_arr, true_arr, cfg.paths.figures_dir, n_samples=3)
 
     out_path = Path(cfg.paths.models_dir) / "evaluation_metrics.npz"
     np.savez_compressed(out_path, mse=mse, channel_mse=channel_mse)

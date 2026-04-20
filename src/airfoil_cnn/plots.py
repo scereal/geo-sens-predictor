@@ -71,3 +71,46 @@ def plot_prediction_vs_target(pred: np.ndarray, target: np.ndarray, fig_path: st
     fig.tight_layout()
     fig.savefig(fig_path, dpi=150)
     plt.close(fig)
+
+def plot_sample_predictions(pred_arr: np.ndarray, true_arr: np.ndarray, fig_dir: str | Path, n_samples: int = 3) -> None:
+    """Save side-by-side target/pred/error images for a few samples.
+
+    Args:
+        pred_arr: [N, C, H, W]
+        true_arr: [N, C, H, W]
+        fig_dir: output directory
+        n_samples: number of samples to save
+    """
+    fig_dir = Path(fig_dir)
+    fig_dir.mkdir(parents=True, exist_ok=True)
+    n_plot = min(n_samples, pred_arr.shape[0])
+
+    for i in range(n_plot):
+        target_img = true_arr[i].mean(axis=0)
+        pred_img = pred_arr[i].mean(axis=0)
+        err_img = pred_img - target_img
+        vmax = float(np.max(np.abs(err_img))) + 1e-12
+
+        fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+        im0 = axes[0].imshow(target_img, origin="lower", cmap="viridis")
+        axes[0].set_title("Target")
+        axes[0].set_xlabel("x")
+        axes[0].set_ylabel("y")
+        plt.colorbar(im0, ax=axes[0], fraction=0.046)
+
+        im1 = axes[1].imshow(pred_img, origin="lower", cmap="viridis")
+        axes[1].set_title("Pred")
+        axes[1].set_xlabel("x")
+        axes[1].set_ylabel("y")
+        plt.colorbar(im1, ax=axes[1], fraction=0.046)
+
+        im2 = axes[2].imshow(err_img, origin="lower", cmap="RdBu", vmin=-vmax, vmax=vmax)
+        axes[2].set_title("Error")
+        axes[2].set_xlabel("x")
+        axes[2].set_ylabel("y")
+        plt.colorbar(im2, ax=axes[2], fraction=0.046)
+
+        fig.suptitle(f"Prediction diagnostics for sample {i}")
+        fig.tight_layout()
+        fig.savefig(fig_dir / f"prediction_sample_{i}.png", dpi=300, bbox_inches="tight")
+        plt.close(fig)

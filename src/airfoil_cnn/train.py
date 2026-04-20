@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from torch import nn
@@ -84,6 +85,26 @@ def run_training(cfg: AppConfig) -> dict[str, list[float]]:
 
     write_epoch_log(cfg.training.log_csv_path, logs)
     plot_losses(train_losses, val_losses, cfg.paths.figures_dir)
+
+    Path(cfg.paths.figures_dir).mkdir(parents=True, exist_ok=True)
+    np.savez(
+        Path(cfg.paths.figures_dir) / "loss_history.npz",
+        train_losses=np.array(train_losses),
+        val_losses=np.array(val_losses),
+    )
+
+    epochs = np.arange(1, len(train_losses) + 1)
+    plt.figure(figsize=(8, 5))
+    plt.plot(epochs, train_losses, label="Train MSE", linewidth=2)
+    plt.plot(epochs, val_losses, label="Val MSE", linewidth=2, color="orange")
+    plt.xlabel("Epoch")
+    plt.ylabel("MSE vs pyGeo sensitivity")
+    plt.title("CNN Training: Geometric Sensitivity Prediction")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.savefig(Path(cfg.paths.figures_dir) / "loss_curves.png", dpi=300, bbox_inches="tight")
+    plt.close()
+
     return {"train_losses": train_losses, "val_losses": val_losses}
 
 
